@@ -2,9 +2,8 @@
 
 > 確認用の日本語版です。上流に見せるのは [README.md](README.md)（英語）のほうです。
 
-最小の再現パッケージです。渡している型が macOS では元々受け付けられず、macOS 27
-ではライブラリ自身の呼び出し経路がその評価に到達するため、キャッチされない
-Objective-C 例外でテストプロセスごと落ちます。
+最小の再現パッケージです。macOS で `perceptualPrecision` を使った比較は、
+**Xcode 27 でビルドすると** キャッチされない Objective-C 例外になります。
 
 ```
 *** Terminating app due to uncaught exception 'NSInvalidArgumentException',
@@ -37,14 +36,18 @@ func applyingAreaAverage() -> CIImage {
 （あるのは `rectValue`）、例外になります。UIKit の `NSValue` には `CGRectValue` が
 あるので、iOS では同じコードでも問題が出ません。
 
+Xcode 26 でビルドした場合はこの `NSValue` が受け付けられ、Xcode 27 でビルドすると
+受け付けられません。下の表から言えるのは「実行時の OS は変数ではなく、ツールチェーン
+が変数である」ということまでで、ツールチェーンの何が変わったのかまでは分かりません。
+
 `compare` がこの知覚差分の経路に入るのは、バイト単位の比較が一致しなかったときだけ
-です。だからスナップショットが完全一致しているあいだは何も起きません。表面化するの
-は、画像が初めてずれたとき — つまり OS を上げた直後で、差分がいちばん見たい場面です。
+です。だからスナップショットが完全一致しているあいだは何も起きず、画像が初めて
+ずれたとき — 差分がいちばん見たい場面 — に表面化します。
 
 ## 中身
 
 テスト対象を 2 つに分けてあります。SwiftPM が別プロセスで実行するので、片方の
-クラッシュでもう片方の結果が消えません。
+失敗でもう片方の結果が消えません。
 
 | 対象 | 示すもの |
 |---|---|
@@ -53,19 +56,22 @@ func applyingAreaAverage() -> CIImage {
 
 ## 実際に確認した結果
 
-| | macOS 26.6 / Xcode 27.0（27A266a） | macOS 27 |
-|---|---|---|
-| `PerceptualCompareTests` | 通る（`The percentage of pixels that match 0.984375 is less than required 0.995` を返す） | 落ちる（TortoiseGraphics2 の CI、`xcode-27` ランナー、イメージ 20260912.0186.1、macOS 27.0 26A5406e で確認） |
-| `CoreImageExtentTests` の `CGRect` 版 | **失敗**（同じ `-[NSConcreteValue CGRectValue]` の例外） | 失敗するはず |
-| `CoreImageExtentTests` の `CIVector` 版 | 通る | 通るはず |
+| OS | ツールチェーン | `PerceptualCompareTests` | `CIAreaAverage` + `CGRect` | `CIAreaAverage` + `CIVector` |
+|---|---|---|---|---|
+| macOS 26.6.2（25G83） | Xcode 26.6 | 通る | 通る | 通る |
+| macOS 26.6 | Xcode 27.0（27A266a） | 通る¹ | **例外** | 通る |
+| macOS 27.0（26A5406e） | Xcode 27.0（27A266a） | **例外** | **例外** | 通る |
 
-つまり `CGRect` を渡すこと自体は macOS 26 でも受け付けられません。macOS 27 で変わった
-のは、ライブラリ自身の呼び出し経路がその評価に到達するようになった点です。
+1 行目と 3 行目はこのリポジトリの CI（`macos-26` と `xcode-27` ランナー）です。
+この 2 つのイメージにはそれぞれ Xcode 26.6 と 27.0 しか入っておらず、OS と Xcode が
+セットで変わるため、CI だけでは原因を切り分けられません。2 行目は手元の Mac
+（Apple M4）で、OS は 1 行目・ツールチェーンは 3 行目と同じ組み合わせです。これが
+3 行目と同じく失敗することから、変数は OS ではなくツールチェーンだと分かります。
 
-**未確認**：この再現パッケージを macOS 27 で走らせた結果はまだありません。上の
-macOS 27 の欄は、同じライブラリのバージョン・同じ呼び出し経路で、別プロジェクト
-（TortoiseGraphics2）の CI で観測したものです。`.github/workflows/ci.yml` を回せば
-このパッケージ自体でも確認できます。
+¹ macOS 26 + Xcode 27 では、ライブラリ自身の呼び出し経路が例外になる評価まで到達
+しないため、直接 Core Image を叩くテストにしか現れません。macOS 27 ではライブラリ
+経路も到達します。TortoiseGraphics2 で表面化したのもこれで、ゴールデン画像が
+ずっと完全一致していたので気づかず、1 枚ずれた瞬間にテストプロセスごと落ちました。
 
 ## 修正案
 
@@ -75,21 +81,23 @@ macOS 27 の欄は、同じライブラリのバージョン・同じ呼び出�
 applyingFilter("CIAreaAverage", parameters: [kCIInputExtentKey: CIVector(cgRect: extent)])
 ```
 
+`CoreImageExtentTests` は両方の書き方を試していて、`CIVector` 版は上の表のすべての
+組み合わせで通っています。
+
 ## 実行方法
 
 ```bash
 swift test
 ```
 
-macOS 26 では `CoreImageExtentTests` の `CGRect` 版 2 件が失敗するので、コマンド
-全体としては失敗で終わります（意図どおりです）。`.github/workflows/ci.yml` は
-`xcode-27`（macOS 27）と対照の `macos-26` の両方で実行し、どちらも
-`continue-on-error: true` にしてあります。
+Xcode 27 でビルドすると、macOS のバージョンによらず `CoreImageExtentTests` が失敗
+するので、コマンド全体としては失敗で終わります（意図どおりです）。
+`.github/workflows/ci.yml` は `xcode-27`（macOS 27）と対照の `macos-26`（Xcode 26.6）
+で実行し、どちらも `continue-on-error: true` にしてあります。
 
 ## 環境
 
 | | |
 |---|---|
 | swift-snapshot-testing | 1.19.4 |
-| クラッシュを観測 | macOS 27.0（26A5406e）、Xcode 27.0（27A266a）、arm64 |
-| 対照 | macOS 26.6、Xcode 27.0（27A266a）、arm64（Apple M4） |
+| ランナーイメージ | `xcode-27-arm64` 20260912.0186.1、`macos-26-arm64` |

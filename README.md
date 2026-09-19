@@ -1,8 +1,7 @@
 # swift-snapshot-testing: perceptual comparison passes a `CGRect` where Core Image wants a `CIVector`
 
-A minimal reproduction. The wrong parameter type is rejected on macOS in
-general; on macOS 27 the library's own call path reaches it, and the resulting
-uncaught Objective-C exception kills the whole test process:
+A minimal reproduction. `perceptualPrecision` comparisons on macOS break when
+the tests are **built with Xcode 27**, with an uncaught Objective-C exception:
 
 ```
 *** Terminating app due to uncaught exception 'NSInvalidArgumentException',
@@ -35,15 +34,18 @@ sends the value `CGRectValue`, which macOS's `NSValue` does not implement — it
 has `rectValue`. (UIKit's `NSValue` does have `CGRectValue`, which is why the
 same code is fine on iOS.)
 
+Built with Xcode 26 the `NSValue` is accepted; built with Xcode 27 it is not.
+The observations below don't say which part of the toolchain changed, only that
+the OS the tests run on is not the variable — the toolchain is.
+
 `compare` only reaches `perceptuallyCompare` when the byte comparison fails, so
-nothing goes wrong while snapshots match exactly. The crash appears the first
-time a snapshot differs — typically right after an OS upgrade, exactly when the
-diff would have been useful.
+nothing goes wrong while snapshots match exactly. The failure appears the first
+time a snapshot differs, which is exactly when the diff would have been useful.
 
 ## What this package contains
 
-Two test targets, so that SwiftPM runs them as separate processes and a crash in
-one does not hide the other's result.
+Two test targets, so that SwiftPM runs them as separate processes and a failure
+in one does not hide the other's result.
 
 | Target | What it shows |
 |---|---|
@@ -52,19 +54,23 @@ one does not hide the other's result.
 
 ## Observed results
 
-| | macOS 26.6 / Xcode 27.0 (27A266a) | macOS 27 |
-|---|---|---|
-| `PerceptualCompareTests` | passes — the comparison returns `The percentage of pixels that match 0.984375 is less than required 0.995` | crashes (seen in CI on the `xcode-27` runner, image 20260912.0186.1, macOS 27.0 26A5406e) |
-| `CoreImageExtentTests`, `CGRect` extent | **fails** with the same `-[NSConcreteValue CGRectValue]` exception | expected to fail |
-| `CoreImageExtentTests`, `CIVector` extent | passes | expected to pass |
+| OS | Toolchain | `PerceptualCompareTests` | `CIAreaAverage` + `CGRect` | `CIAreaAverage` + `CIVector` |
+|---|---|---|---|---|
+| macOS 26.6.2 (25G83) | Xcode 26.6 | passes | passes | passes |
+| macOS 26.6 | Xcode 27.0 (27A266a) | passes¹ | **throws** | passes |
+| macOS 27.0 (26A5406e) | Xcode 27.0 (27A266a) | **throws** | **throws** | passes |
 
-So the `CGRect` extent is already rejected on macOS 26 when Core Image evaluates
-it. What changed on macOS 27 is that the library's own call path reaches that
-evaluation; on macOS 26 the same call goes through without it.
+Rows 1 and 3 are this repository's CI (the `macos-26` and `xcode-27` runners in
+`.github/workflows/ci.yml`). Those two images each carry only one Xcode — 26.6
+and 27.0 respectively — so CI alone cannot separate the OS from the toolchain.
+Row 2 is a local machine (Apple M4) with the OS of row 1 and the toolchain of
+row 3, and it fails like row 3: the toolchain is the variable.
 
-**Note:** the macOS 27 column for this package is not verified yet — it was
-observed in another project's CI with the same library version and call path.
-Running `.github/workflows/ci.yml` here confirms it.
+¹ On macOS 26 with Xcode 27 the library's own call path does not reach the
+evaluation that throws, so only the direct Core Image test shows it there. On
+macOS 27 the library path reaches it too — which is how this surfaced: a
+project whose canvas snapshots had always matched byte for byte started losing
+the whole test process as soon as one image differed.
 
 ## Suggested fix
 
@@ -74,19 +80,23 @@ Pass a `CIVector` in both helpers:
 applyingFilter("CIAreaAverage", parameters: [kCIInputExtentKey: CIVector(cgRect: extent)])
 ```
 
+`CoreImageExtentTests` covers both spellings, and the `CIVector` one passes in
+every combination above.
+
 ## Running it
 
 ```bash
 swift test
 ```
 
-`.github/workflows/ci.yml` runs the package on the `xcode-27` runner (macOS 27)
-and on `macos-26` as a control.
+Built with Xcode 27, `CoreImageExtentTests` fails on any macOS, so the command
+exits non-zero — that is the point. `.github/workflows/ci.yml` runs the package
+on the `xcode-27` runner (macOS 27) and on `macos-26` (Xcode 26.6) as a control,
+with `continue-on-error` so both results are visible.
 
 ## Environment
 
 | | |
 |---|---|
 | swift-snapshot-testing | 1.19.4 |
-| Crash seen on | macOS 27.0 (26A5406e), Xcode 27.0 (27A266a), arm64 |
-| Control | macOS 26.6, Xcode 27.0 (27A266a), arm64 (Apple M4) |
+| Runner images | `xcode-27-arm64` 20260912.0186.1, `macos-26-arm64` |
