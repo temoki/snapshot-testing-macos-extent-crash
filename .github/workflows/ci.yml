@@ -4,19 +4,31 @@ on:
   push:
   workflow_dispatch:
 
+# The two GitHub-hosted images each carry exactly one Xcode major version
+# (xcode-27: Xcode 27 only; macos-26: Xcode 26.x only), and there is no
+# macos-27 image, so CI cannot vary the OS and the toolchain independently.
+# The third combination in README.md — macOS 26 with Xcode 27, which fails like
+# macOS 27 does and is what pins the blame on the toolchain — was run locally.
 jobs:
   test:
-    name: swift test (${{ matrix.runner }})
+    name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
-        # xcode-27 runs macOS 27, where the crash reproduces;
-        # macos-26 is the control, where the same code passes.
-        runner: [xcode-27, macos-26]
+        include:
+          - name: macOS 27 + Xcode 27.0
+            runner: xcode-27
+            xcode: /Applications/Xcode_27.0.app
+          - name: macOS 26 + Xcode 26.6
+            runner: macos-26
+            xcode: /Applications/Xcode_26.6.app
     steps:
       - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s ${{ matrix.xcode }}
 
       - name: Environment
         run: |
