@@ -57,14 +57,20 @@ in one does not hide the other's result.
 | OS | Toolchain | `PerceptualCompareTests` | `CIAreaAverage` + `CGRect` | `CIAreaAverage` + `CIVector` |
 |---|---|---|---|---|
 | macOS 26.6.2 (25G83) | Xcode 26.6 | passes | passes | passes |
-| macOS 26.6 | Xcode 27.0 (27A266a) | passes¹ | **throws** | passes |
+| macOS 26.6.2 (25G83) | Xcode 27.0 (27A266a) | passes¹ | **throws** | passes |
 | macOS 27.0 (26A5406e) | Xcode 27.0 (27A266a) | **throws** | **throws** | passes |
+| macOS 27.0 | Xcode 26.x | not observed — no such pairing available | | |
 
 Rows 1 and 3 are this repository's CI (the `macos-26` and `xcode-27` runners in
 `.github/workflows/ci.yml`). Those two images each carry only one Xcode — 26.6
 and 27.0 respectively — so CI alone cannot separate the OS from the toolchain.
-Row 2 is a local machine (Apple M4) with the OS of row 1 and the toolchain of
-row 3, and it fails like row 3: the toolchain is the variable.
+Row 2 is a local machine (Apple M4): same OS as row 1, same toolchain as row 3.
+
+Row 2 is what pins the blame on the toolchain. Holding the OS at 26.6.2 and
+moving only Xcode 26.6 → 27.0 turns a pass into a throw, so the OS the tests
+run on is not the variable. Row 4 would be the mirror image, but the `xcode-27`
+runner image ships no Xcode 26 and Apple does not support that pairing, so it
+was not measured; rows 1 and 2 already settle the question.
 
 ¹ On macOS 26 with Xcode 27 the library's own call path does not reach the
 evaluation that throws, so only the direct Core Image test shows it there. On
