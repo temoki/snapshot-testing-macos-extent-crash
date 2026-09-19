@@ -1,7 +1,8 @@
-# swift-snapshot-testing: perceptual comparison crashes on macOS 27
+# swift-snapshot-testing: perceptual comparison passes a `CGRect` where Core Image wants a `CIVector`
 
-A minimal reproduction for an uncaught Objective-C exception that kills the
-whole test process when `perceptualPrecision` is used on macOS 27:
+A minimal reproduction. The wrong parameter type is rejected on macOS in
+general; on macOS 27 the library's own call path reaches it, and the resulting
+uncaught Objective-C exception kills the whole test process:
 
 ```
 *** Terminating app due to uncaught exception 'NSInvalidArgumentException',
