@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "SnapshotTestingMacOSIssue",
+    name: "SnapshotTestingMacOSExtentCrash",
     platforms: [.macOS(.v14)],
     dependencies: [
         .package(url: "https://github.com/pointfreeco/swift-snapshot-testing", from: "1.19.4")
