@@ -1,0 +1,28 @@
+name: Repro
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: swift test (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        # xcode-27 runs macOS 27, where the crash reproduces;
+        # macos-26 is the control, where the same code passes.
+        runner: [xcode-27, macos-26]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Environment
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+
+      - name: Test
+        run: swift test
